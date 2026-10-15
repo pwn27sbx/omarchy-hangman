@@ -1,0 +1,211 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Commons
+import "js/Schema.js" as Schema
+import "js/Game.js" as Game
+import "js/Words.js" as Words
+import "core"
+
+// the always-loaded part: settings, the word in play, stats, your own words and ipc.
+// the bar button, the panel and the popped out window all read from here,
+// so closing the panel never loses a game
+Item {
+    id: root
+
+    visible: false
+
+    property var shell: null
+    property var manifest: null
+
+    readonly property string pluginId: "io.github.qempexe.hangman"
+
+    // settings
+    SettingsStore { id: settingsStore }
+    property alias store: settingsStore
+    readonly property var cfg: Schema.resolve(settingsStore.values)
+
+    function setValue(key, value) {
+        var v = Schema.clean(key, value)
+        if (v !== undefined) settingsStore.set(key, v)
+    }
+
+    UiState {
+        id: ux
+        store: settingsStore
+        cfg: root.cfg
+        barFg: Color.bar.text
+        barBg: Color.bar.background
+        themeAccent: Color.accent
+        themeUrgent: Color.urgent
+        fontName: Style.font.family
+    }
+    property alias ui: ux
+
+    // game
+    GameStore {
+        id: gameStore
+        onReady: if (root.game === null) root.newWord()
+    }
+    readonly property var game: gameStore.game
+    readonly property var stats: gameStore.stats
+    readonly property bool playing: game !== null && game.status === "playing"
+    readonly property bool finished: game !== null && game.status !== "playing"
+
+    // bumped on every guess, the panel uses it to shake / pop things
+    property int lastHit: 0
+    property int lastMiss: 0
+
+    function wordsFor(choice) {
+        var all = Words.pool(choice, root.lists, root.customWords)
+        var fit = all.filter(function(p) { return Words.fitsLength(p.word, root.cfg.length) })
+        return fit.length > 0 ? fit : all
+    }
+
+    // a word that's still open when you ask for a new one counts as lost
+    function newWord() {
+        if (!gameStore.loaded) return
+        // the word files are still being read: do it once they're in
+        if (!root.listsReady) { root.wantWord = true; return }
+        root.wantWord = false
+        if (root.cfg.category === "custom") readCustom()
+        var choice = root.cfg.category === "custom" && root.customWords.length === 0 ? "mixed" : root.cfg.category
+        if (root.playing && Game.touched(root.game)) giveUp()
+        var recent = root.stats.recent.map(function(r) { return r.word })
+        var entry = Game.pick(wordsFor(choice), recent, Math.random)
+        if (!entry) return
+        autoNext.stop()
+        gameStore.game = Game.start(entry, { lives: root.cfg.lives, hints: root.cfg.hints, reveal: root.cfg.reveal }, Date.now())
+        gameStore.save()
+    }
+
+    function apply(next) {
+        var before = root.game
+        if (next === before) return
+        gameStore.game = next
+        if (next.wrong > before.wrong) root.lastMiss++
+        else root.lastHit++
+        if (next.status !== "playing") {
+            gameStore.stats = Game.record(root.stats, next)
+            if (root.cfg.autoNext) autoNext.restart()
+        }
+        gameStore.save()
+    }
+
+    function guess(letter) { if (root.game) apply(Game.guess(root.game, letter)) }
+    function useHint() { if (root.game) apply(Game.hint(root.game, Math.random)) }
+    readonly property bool hintReady: Game.canHint(root.game)
+
+    function giveUp() {
+        if (!root.playing) return
+        var g = Game.revive(root.game)
+        g.wrong = g.lives
+        g.status = "lost"
+        gameStore.game = g
+        gameStore.stats = Game.record(root.stats, g)
+        gameStore.save()
+    }
+
+    function resetStats() {
+        gameStore.stats = Game.emptyStats()
+        gameStore.save()
+    }
+
+    Timer { id: autoNext; interval: 1600; onTriggered: root.newWord() }
+
+    // the built-in words for the chosen language: words/<language>/<category>-<language>.txt
+    readonly property string wordsDir: decodeURIComponent(Qt.resolvedUrl("../words").toString().replace(/^file:\/\//, ""))
+    property var lists: ({})
+    property bool listsReady: false
+    property bool wantWord: false
+    property string listsLanguage: ""
+
+    function readLists() {
+        if (listsReader.running) { listsAgain = true; return }
+        listsReader.lang = root.cfg.language
+        listsReader.running = true
+    }
+    property bool listsAgain: false
+
+    // one sh call prints every file of the language, each after a "@@ <category>" line
+    Process {
+        id: listsReader
+        property string lang: "en"
+        command: ["sh", "-c",
+            'for f in "$1/$2"/*-"$2".txt; do [ -f "$f" ] || continue; '
+            + 'printf "@@ %s\\n" "$(basename "$f" "-$2.txt")"; head -c 262144 "$f"; printf "\\n"; done',
+            "sh", root.wordsDir, lang]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var switched = root.listsLanguage !== "" && root.listsLanguage !== listsReader.lang
+                root.lists = Words.parseBundle(text)
+                root.listsLanguage = listsReader.lang
+                root.listsReady = true
+                // new language and nothing guessed yet: swap the word straight away
+                if (switched && root.playing && !Game.touched(root.game)) Qt.callLater(root.newWord)
+            }
+        }
+        onExited: if (root.listsAgain) { root.listsAgain = false; Qt.callLater(root.readLists) }
+    }
+
+    onListsReadyChanged: if (root.listsReady && (root.wantWord || (gameStore.loaded && root.game === null))) Qt.callLater(root.newWord)
+
+    readonly property string wantedLanguage: cfg.language
+    onWantedLanguageChanged: readLists()
+
+    // new settings for lives/hints/reveal only change the next word
+    readonly property string gameKey: cfg.category + "/" + cfg.length
+    onGameKeyChanged: if (gameStore.loaded && root.playing && !Game.touched(root.game)) root.newWord()
+
+    // your own words: ~/.config/hangman/words.txt, first 64 KB only
+    readonly property string wordsPath: (Quickshell.env("XDG_CONFIG_HOME")
+        || Quickshell.env("HOME") + "/.config") + "/hangman/words.txt"
+    property var customWords: []
+
+    function readCustom() { if (!wordsReader.running) wordsReader.running = true }
+
+    Process {
+        id: wordsReader
+        command: ["head", "-c", "65536", root.wordsPath]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.customWords = Words.parseCustom(text)
+                // switched to your words before the file was read: swap the word, if untouched
+                if (root.cfg.category === "custom" && root.customWords.length > 0 && root.playing
+                        && root.game.category !== "custom" && !Game.touched(root.game))
+                    root.newWord()
+            }
+        }
+    }
+    Component.onCompleted: { readCustom(); readLists() }
+
+    // bar text
+    readonly property string barLabel: {
+        var c = root.cfg
+        var g = root.game
+        if (c.barDisplay === "word" && g && root.playing) return Game.masked(g)
+        if (c.barDisplay === "lives" && g && root.playing)
+            return "♥ " + (g.lives - g.wrong) + "/" + g.lives
+        return c.barText.trim() !== "" ? c.barText : ux.t("game")
+    }
+
+    // ipc: omarchy-shell io.github.qempexe.hangman <function>
+    IpcHandler {
+        target: root.pluginId
+
+        function play(): string { root.ui.tabRequested("play", false); return "ok" }
+        function settings(): string { root.ui.tabRequested("settings", true); return "ok" }
+        function next(): string { root.newWord(); return root.game ? Game.masked(root.game) : "no words" }
+        function status(): string {
+            var g = root.game
+            return JSON.stringify({
+                word: g ? Game.masked(g) : "",
+                status: g ? g.status : "",
+                lives: g ? g.lives - g.wrong : 0,
+                played: root.stats.played,
+                won: root.stats.won,
+                streak: root.stats.streak
+            })
+        }
+    }
+}
