@@ -145,7 +145,7 @@ check(Game.start({ word: "CAT", category: "x" }, { lives: "x" }).lives === 6, "b
 
 console.log("== texts");
 const en = namesOf(Lang.texts.en);
-for (const l of ["fr", "nl", "ro"]) {
+for (const l of Words.languages.map(l => l.key).filter(l => l !== "en")) {
   const missing = en.filter(k => !(k in Lang.texts[l]));
   const extra = namesOf(Lang.texts[l]).filter(k => !(k in Lang.texts.en));
   check(missing.length === 0 && extra.length === 0, l + " has every text " + missing.concat(extra).join(","));
@@ -164,6 +164,18 @@ for (const k of Words.keys) if (!("cat." + k in Lang.texts.en)) noText.push("cat
 check(noText.length === 0, "every setting and category has its texts " + noText.join(","));
 check(Lang.t("fr", "head.won", 3, 5) === "3 sur 5 gagnés" && Lang.t("de", "tab.play") === "Play" && Lang.t("ro", "nope") === "nope", "t() fills in, falls back");
 check(Lang.optionLabels("nl", "length", ["short"], {}).short === "Kort" && Lang.optionLabels("ro", "category", ["food"], {}).food === "Mâncare", "option labels translated");
+check(Lang.t("es", "game") === "El ahorcado", "the game is El ahorcado in Spanish");
+
+// a language has to be added in four places or the settings and the panel disagree
+console.log("== registries");
+const wordsLangs = Words.languages.map(l => l.key);
+const rows = Schema.groups[0].items;
+const optionsOf = (key) => rows.find(i => i.key === key).options;
+check(wordsLangs.join() === Lang.languages.join(), "Words.languages and Lang.languages agree: " + wordsLangs.join());
+check(wordsLangs.join() === optionsOf("language").join(), "language options agree: " + optionsOf("language").join());
+check(optionsOf("uiLanguage").join() === ["auto"].concat(wordsLangs).join(), "uiLanguage is auto plus every language: " + optionsOf("uiLanguage").join());
+check(Schema.resolve({ language: "es" }).language === "es" && Schema.resolve({ uiLanguage: "es" }).uiLanguage === "es", "Spanish is a real value for both settings");
+check(Schema.resolve({ language: "de" }).language === "en", "an unknown language still falls back");
 
 console.log(fails ? "\nFAILURES: " + fails : "\nALL OK");
 process.exit(fails ? 1 : 0);
