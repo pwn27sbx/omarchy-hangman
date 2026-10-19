@@ -71,6 +71,14 @@ check(JSON.stringify(Words.parseList("año\nano", 5000, "es")) === JSON.stringif
 check(JSON.stringify(Words.parseList("año\nano", 5000)) === JSON.stringify(["ANO"]), "año and ano still fold together elsewhere");
 // the UI keeps ñ out of an English game; at engine level it is an ordinary miss
 check(Game.guess(Game.start({ word: "CAT", category: "animals" }, {}), "Ñ").wrong === 1, "Ñ on an English word is just a wrong letter");
+// the invariant behind all of it: only the exact "es" changes anything
+for (const lang of ["fr", "nl", "ro"]) {
+  for (const w of ["año", "ñu", "pingüino", "Brașov", "bœuf", "Straße", "Brașov"])
+    check(Words.clean(w, lang) === Words.clean(w), "clean(" + w + ", " + lang + ") is the same as clean(" + w + ")");
+}
+check(Words.clean("año", "ES") === "ANO" && Words.clean("año", "es ") === "ANO" && Words.clean("\uE000o", "es") === "", "only the exact \"es\" keeps ñ, and a stray placeholder is not a letter");
+check(Game.revive({ word: "CAT", guessed: "ABCDEFGHIJKLMNOPQRSTUVWXY" }).guessed.length === 25
+  && Game.revive({ word: "CAT", guessed: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" }).guessed.length === 26, "a plain A-Z save is untouched by the longer cap");
 
 console.log("== game");
 let g = Game.start({ word: "NEW YORK", category: "cities" }, { lives: 3, hints: 1 }, 5);
@@ -162,6 +170,8 @@ for (const g of Schema.groups) {
 }
 for (const k of Words.keys) if (!("cat." + k in Lang.texts.en)) noText.push("cat." + k);
 check(noText.length === 0, "every setting and category has its texts " + noText.join(","));
+// the {0}/{1} are part of the contract, not just the set of keys
+for (const k of en) check((Lang.texts.en[k].match(/\{\d\}/g) || []).join() === (Lang.texts.es[k].match(/\{\d\}/g) || []).join(), "the Spanish text for " + k + " keeps the placeholders");
 check(Lang.t("fr", "head.won", 3, 5) === "3 sur 5 gagnés" && Lang.t("de", "tab.play") === "Play" && Lang.t("ro", "nope") === "nope", "t() fills in, falls back");
 check(Lang.optionLabels("nl", "length", ["short"], {}).short === "Kort" && Lang.optionLabels("ro", "category", ["food"], {}).food === "Mâncare", "option labels translated");
 check(Lang.t("es", "game") === "El ahorcado", "the game is El ahorcado in Spanish");

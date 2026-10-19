@@ -76,9 +76,11 @@ function clean(raw, lang) {
     var s = toText(raw);
     var spanish = lang === "es";
 
-    // Spanish keeps ñ, so hold it aside as a placeholder while the accents come off
+    // Spanish keeps ñ, so hold it aside as a placeholder while the accents come off.
+    // a literal placeholder in the file is not a letter, so drop it first
     if (spanish) {
         if (s.normalize) s = s.normalize("NFC");   // an already decomposed ñ counts too
+        s = s.replace(/[\uE000\uE001]/g, "");
         s = s.replace(/ñ/g, "\uE000").replace(/Ñ/g, "\uE000");
     }
 

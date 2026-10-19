@@ -142,8 +142,11 @@ Item {
                 root.listsLanguage = listsReader.lang
                 root.listsReady = true
                 // new language and nothing guessed yet: swap the word straight away.
-                // your own words live in another file, that read swaps it instead
-                if (switched && root.cfg.category !== "custom" && root.playing && !Game.touched(root.game))
+                // your own words live in another file, that read does the swap instead,
+                // unless the list is empty: then the game falls back to every list, which
+                // is exactly what this read just replaced
+                var customWords = root.cfg.category === "custom" && root.customWords.length > 0
+                if (switched && !customWords && root.playing && !Game.touched(root.game))
                     Qt.callLater(root.newWord)
             }
         }
