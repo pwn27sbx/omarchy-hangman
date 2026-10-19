@@ -4,7 +4,7 @@
 // cleaning words up, and building the list a word is picked from.
 //
 // The words themselves live in the words/ folder, a folder per language and a file per category:
-//   words/en/animals-en.txt, words/fr/animals-fr.txt, words/nl/animals-nl.txt, words/ro/animals-ro.txt, ...
+//   words/en/animals-en.txt, words/fr/animals-fr.txt, words/nl/animals-nl.txt, words/ro/animals-ro.txt, words/es/animals-es.txt, ...
 // One word or phrase per line, # starts a comment.
 
 var categories = [
@@ -29,7 +29,8 @@ var languages = [
     { key: "en", label: "English" },
     { key: "fr", label: "Français" },
     { key: "nl", label: "Nederlands" },
-    { key: "ro", label: "Română" }
+    { key: "ro", label: "Română" },
+    { key: "es", label: "Español" }
 ];
 
 var MAX_WORDS_PER_FILE = 5000;

@@ -15,7 +15,7 @@ function check(c, m) { console.log((c ? "  ok   " : "  FAIL ") + m); if (!c) fai
 console.log("== words");
 const dir = path.join(__dirname, "..", "words");
 const langs = Words.languages.map(l => l.key);
-check(langs.join() === "en,fr,nl,ro", "Words.languages has all four");
+check(langs.join() === "en,fr,nl,ro,es", "Words.languages has all five");
 let total = 0;
 for (const lang of langs) {
   let bundle = "", count = 0;

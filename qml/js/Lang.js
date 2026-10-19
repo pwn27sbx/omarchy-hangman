@@ -8,7 +8,7 @@
 // Missing in a language? Then the English one is used, and if that's missing too,
 // the key itself. So a forgotten translation never shows an empty button.
 
-var languages = ["en", "fr", "nl", "ro"];
+var languages = ["en", "fr", "nl", "ro", "es"];
 
 var texts = {};
 
