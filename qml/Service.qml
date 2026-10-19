@@ -138,11 +138,13 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 var switched = root.listsLanguage !== "" && root.listsLanguage !== listsReader.lang
-                root.lists = Words.parseBundle(text)
+                root.lists = Words.parseBundle(text, listsReader.lang)
                 root.listsLanguage = listsReader.lang
                 root.listsReady = true
-                // new language and nothing guessed yet: swap the word straight away
-                if (switched && root.playing && !Game.touched(root.game)) Qt.callLater(root.newWord)
+                // new language and nothing guessed yet: swap the word straight away.
+                // your own words live in another file, that read swaps it instead
+                if (switched && root.cfg.category !== "custom" && root.playing && !Game.touched(root.game))
+                    Qt.callLater(root.newWord)
             }
         }
         onExited: if (root.listsAgain) { root.listsAgain = false; Qt.callLater(root.readLists) }
@@ -151,7 +153,7 @@ Item {
     onListsReadyChanged: if (root.listsReady && (root.wantWord || (gameStore.loaded && root.game === null))) Qt.callLater(root.newWord)
 
     readonly property string wantedLanguage: cfg.language
-    onWantedLanguageChanged: readLists()
+    onWantedLanguageChanged: { readLists(); readCustom() }
 
     // new settings for lives/hints/reveal only change the next word
     readonly property string gameKey: cfg.category + "/" + cfg.length
@@ -166,13 +168,17 @@ Item {
 
     Process {
         id: wordsReader
+        property string lang: ""
         command: ["head", "-c", "65536", root.wordsPath]
         stdout: StdioCollector {
             onStreamFinished: {
-                root.customWords = Words.parseCustom(text)
-                // switched to your words before the file was read: swap the word, if untouched
+                // ñ survives in a Spanish list, so the file is cleaned for the language in play now
+                var switched = wordsReader.lang !== "" && wordsReader.lang !== root.cfg.language
+                root.customWords = Words.parseCustom(text, root.cfg.language)
+                wordsReader.lang = root.cfg.language
+                // switched to your words, or switched language on your own words: swap the word, if untouched
                 if (root.cfg.category === "custom" && root.customWords.length > 0 && root.playing
-                        && root.game.category !== "custom" && !Game.touched(root.game))
+                        && !Game.touched(root.game) && (switched || root.game.category !== "custom"))
                     root.newWord()
             }
         }

@@ -69,8 +69,17 @@ function labelOf(key) {
 //   "new york"  -> "NEW YORK"
 //   "chute d’eau" -> "CHUTE D'EAU"   (apostrophes are kept, like spaces they're shown for free)
 //   "abc1", "a/b", "x" -> ""   (only letters, spaces, hyphens and apostrophes, 2 to 30 long)
-function clean(raw) {
+//   "año", "es"  -> "AÑO"      (Spanish keeps ñ as a letter of its own)
+//   "año"        -> "ANO"      (any other language folds ñ to N, like an accent)
+function clean(raw, lang) {
     var s = toText(raw);
+    var spanish = lang === "es";
+
+    // Spanish keeps ñ, so hold it aside as a placeholder while the accents come off
+    if (spanish) {
+        if (s.normalize) s = s.normalize("NFC");   // an already decomposed ñ counts too
+        s = s.replace(/ñ/g, "\uE000").replace(/Ñ/g, "\uE000");
+    }
 
     s = s.replace(/œ/g, "oe").replace(/Œ/g, "OE");
     s = s.replace(/æ/g, "ae").replace(/Æ/g, "AE");
@@ -84,8 +93,12 @@ function clean(raw) {
     s = s.toUpperCase();
     s = s.replace(/\s+/g, " ").trim();   // one space between words
 
+    // uppercase on the way in and out, so both ñ and Ñ come back as Ñ
+    if (spanish) s = s.replace(/\uE000/g, "Ñ");
+
     if (s.length < 2 || s.length > 30) return "";
-    if (!/^[A-Z][A-Z '-]*[A-Z]$/.test(s)) return "";
+    var allowed = spanish ? /^[A-ZÑ][A-ZÑ '-]*[A-ZÑ]$/ : /^[A-Z][A-Z '-]*[A-Z]$/;
+    if (!allowed.test(s)) return "";
     // no two marks in a row, like "--", "- " or "' "
     if (/[ '-]{2}/.test(s)) return "";
     return s;
@@ -93,7 +106,8 @@ function clean(raw) {
 
 // Reads a list: one word or phrase per line, everything after # is a comment.
 // Bad lines and duplicates are skipped, and it stops at `max` words.
-function parseList(text, max) {
+// `lang` is only used for ñ, see clean().
+function parseList(text, max, lang) {
     var result = [];
     var seen = {};
     var lines = toText(text).split(/\r?\n/);
@@ -105,7 +119,7 @@ function parseList(text, max) {
         var hash = line.indexOf("#");
         if (hash !== -1) line = line.substring(0, hash);
 
-        var word = clean(line);
+        var word = clean(line, lang);
         if (word !== "" && seen[word] !== true) {
             seen[word] = true;
             result.push(word);
@@ -115,15 +129,15 @@ function parseList(text, max) {
 }
 
 // your own words.txt
-function parseCustom(text) {
-    return parseList(text, MAX_CUSTOM_WORDS);
+function parseCustom(text, lang) {
+    return parseList(text, MAX_CUSTOM_WORDS, lang);
 }
 
 // The word files for one language come in as one block of text, each file
 // starting with a line "@@ animals". This splits it back into lists:
 //   { animals: ["AARDVARK", ...], countries: [...], ... }
 // Unknown category names are ignored.
-function parseBundle(text) {
+function parseBundle(text, lang) {
     var lists = {};
     var parts = toText(text).split(/^@@ /m);
 
@@ -135,7 +149,7 @@ function parseBundle(text) {
         var name = part.substring(0, newline).trim();
         if (!isCategory(name)) continue;
 
-        lists[name] = parseList(part.substring(newline + 1), MAX_WORDS_PER_FILE);
+        lists[name] = parseList(part.substring(newline + 1), MAX_WORDS_PER_FILE, lang);
     }
     return lists;
 }
@@ -171,13 +185,14 @@ function pool(choice, lists, customWords) {
     return result;
 }
 
-// letters only, spaces, hyphens and apostrophes don't count ("NEW YORK" -> 7)
+// letters only, spaces, hyphens and apostrophes don't count ("NEW YORK" -> 7).
+// Ñ is a letter here too, so "AÑO" is 3.
 function letterCount(word) {
     var count = 0;
     var w = toText(word);
     for (var i = 0; i < w.length; i++) {
         var c = w.charAt(i);
-        if (c >= "A" && c <= "Z") count++;
+        if ((c >= "A" && c <= "Z") || c === "Ñ") count++;
     }
     return count;
 }
